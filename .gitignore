@@ -1,0 +1,7 @@
+stackcollapse-php
+
+.idea
+*.xt
+*.collapsed
+*.svg
+*.prof
