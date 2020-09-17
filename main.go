@@ -18,9 +18,15 @@ type sample struct {
 	name   []byte
 }
 
+type stackItem struct {
+	name *[]byte
+	len int
+	time float64
+	prev *stackItem
+}
+
 type stack struct {
-	samples    []sample
-	nameLength int
+	top *stackItem
 }
 
 type collapsedTrace struct {
@@ -146,36 +152,52 @@ func (ct *collapsedTrace) returnFromCall(time float64) {
 	if ct.stack.isEmpty() {
 		return
 	}
-	top := ct.stack.pop()
-	duration := time - top.time
-	nameBuf := bytes.NewBuffer(make([]byte, 0, ct.stack.nameLength+len(top.name)+1))
-	for _, v := range ct.stack.samples {
-		nameBuf.Write(v.name)
-		nameBuf.WriteByte(';')
-	}
-	nameBuf.Write(top.name)
 
-	name := nameBuf.String()
-	total, exists := ct.stackFreq[name]
+	duration := time - ct.stack.getTime()
+	name := ct.stack.getName()
+	total, exists := ct.stackFreq[string(name)]
 	if exists {
-		ct.stackFreq[name] = total + duration
+		ct.stackFreq[string(name)] = total + duration
 	} else {
-		ct.stackFreq[name] = duration
+		ct.stackFreq[string(name)] = duration
 	}
+	ct.stack.pop()
+
 }
 
 func (s *stack) isEmpty() bool {
-	return len(s.samples) == 0
+	return s.top == nil
 }
 
 func (s *stack) push(sample sample) {
-	s.samples = append(s.samples, sample)
-	s.nameLength += len(sample.name) + 1
+	var newTop stackItem
+	newTop.time = sample.time
+	if s.isEmpty() {
+		newTop.name = &sample.name
+		newTop.len = len(sample.name)
+	} else {
+		newNameBuf := append(*s.top.name, ';')
+		newNameBuf = append(newNameBuf, sample.name...)
+		*s.top.name =  newNameBuf
+		newTop.name = s.top.name
+		newTop.len = s.top.len  + 1 + len(sample.name)
+	}
+	newTop.prev = s.top
+	s.top = &newTop
 }
 
-func (s *stack) pop() sample {
-	out := s.samples[len(s.samples)-1]
-	s.samples = s.samples[:len(s.samples)-1]
-	s.nameLength -= len(out.name) + 1
-	return out
+func (s *stack) getTime() float64 {
+	return s.top.time
+}
+
+func (s *stack) getName() []byte {
+	return *s.top.name
+}
+
+func (s *stack) pop() {
+	if s.top.prev != nil {
+		s.top = s.top.prev
+	}
+	newNameBuf := (*s.top.name)[:s.top.len]
+	s.top.name = &(newNameBuf)
 }

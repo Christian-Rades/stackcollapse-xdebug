@@ -77,6 +77,6 @@ func assertStackHasDuration(stackName string, duration float64, ct collapsedTrac
 		return
 	}
 	if math.Abs(stackcount-duration) > delta {
-		t.Errorf("missing or wrong entry for stack: %q got: %f", stackName, stackcount)
+		t.Errorf("missing or wrong entry for stack2: %q got: %f", stackName, stackcount)
 	}
 }
