@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -14,7 +13,6 @@ import (
 )
 
 type sample struct {
-	level  int
 	isExit bool
 	time   float64
 	name   []byte
@@ -43,21 +41,29 @@ func main() {
 		defer pprof.StopCPUProfile()
 	}
 
-	bReader := bufio.NewReader(os.Stdin)
 
-	var err error
-	var line []byte
+	ct, err := collapseTrace(os.Stdin)
+	if err != nil {
+		panic(err)
+	}
+	for k, v := range ct.stackFreq {
+		fmt.Printf("%s %f\n", k, v)
+	}
+}
+
+func collapseTrace(r io.Reader) (collapsedTrace, error) {
+	traceScanner := bufio.NewScanner(r)
 	start := true
 
-	for start && err == nil {
-		line, _, err = bReader.ReadLine()
+	for start && traceScanner.Scan() {
+		line := traceScanner.Bytes()
 		if bytes.Contains(line, []byte("TRACE START")) {
 			start = false
 		}
 	}
 
-	if err != nil {
-		panic(err)
+	if  traceScanner.Err() != nil {
+		panic(traceScanner.Err())
 	}
 
 	ct := collapsedTrace{
@@ -65,15 +71,11 @@ func main() {
 		stack:     stack{},
 	}
 
-	for err == nil {
-		var isPrefix bool
-		line, isPrefix, err = bReader.ReadLine()
+	for traceScanner.Scan() {
+		line := traceScanner.Bytes()
 
-		if isPrefix {
-			for isPrefix {
-				_, isPrefix, _ = bReader.ReadLine()
-			}
-			fmt.Println("line too long")
+		if line[0] == '\t' {
+			break
 		}
 
 		s, errInner := parseSample(line)
@@ -85,45 +87,23 @@ func main() {
 		}
 		ct.addSample(s)
 	}
-	if err != io.EOF {
-		println(err)
+	if traceScanner.Err() != nil {
+		return ct, traceScanner.Err()
 	}
-	for k, v := range ct.stackFreq {
-		fmt.Printf("%s %f\n", k, v)
-	}
+	return ct, nil
 }
 
 func parseSample(input []byte) (sample, error) {
 	var out sample
-	posLevel := bytes.IndexByte(input, '\t')
-	if posLevel < 0 {
-		return out, errors.New("missing field")
-	}
-	level, err := strconv.Atoi(string(input[0:posLevel]))
-	if err != nil {
-		return out, err
-	}
-	out.level = level
-	input = input[posLevel+1:]
 
-	posFunctionNumber := bytes.IndexByte(input, '\t')
-	if posFunctionNumber < 0 {
-		return out, errors.New("missing field")
-	}
-	input = input[posFunctionNumber+1:]
+	input = skipField(input)
+	input = skipField(input)
 
-	posIsExit := bytes.IndexByte(input, '\t')
-	if posIsExit < 0 {
-		return out, errors.New("missing field")
-	}
-	out.isExit = input[0] != '0'
-	input = input[posIsExit+1:]
+	isExitField, input := readField(input)
+	out.isExit = isExitField[0] != '0'
 
-	posTime := bytes.IndexByte(input, '\t')
-	if posTime < 0 {
-		return out, errors.New("missing field")
-	}
-	time, err := strconv.ParseFloat(string(input[0:posTime]), 64)
+	timeField, input := readField(input)
+	time, err := strconv.ParseFloat(string(timeField), 64)
 	if err != nil {
 		return out, err
 	}
@@ -131,21 +111,23 @@ func parseSample(input []byte) (sample, error) {
 	if out.isExit {
 		return out, nil
 	}
-	input = input[posTime+1:]
 
-	posMemUsage := bytes.IndexByte(input, '\t')
-	if posMemUsage < 0 {
-		return out, errors.New("missing field")
-	}
-	input = input[posMemUsage+1:]
+	input = skipField(input)
 
-	posName := bytes.IndexByte(input, '\t')
-	if posName < 0 {
-		return out, errors.New("missing field")
-	}
-	out.name = make([]byte, posName)
-	copy(out.name, input[:posName])
+	nameField,_ := readField(input)
+	out.name = make([]byte, len(nameField))
+	copy(out.name, nameField)
 	return out, nil
+}
+
+func skipField(input []byte) []byte {
+	nextSep := bytes.IndexByte(input, '\t')
+	return input[nextSep+1:]
+}
+
+func readField(input []byte) ([]byte, []byte) {
+	nextSep := bytes.IndexByte(input, '\t')
+	return input[:nextSep], input[nextSep+1:]
 }
 
 func (ct *collapsedTrace) addSample(s sample) {
