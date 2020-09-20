@@ -19,13 +19,13 @@ type sample struct {
 }
 
 type stackItem struct {
-	name *[]byte
 	len int
 	time float64
 	prev *stackItem
 }
 
 type stack struct {
+	name []byte
 	top *stackItem
 }
 
@@ -173,13 +173,11 @@ func (s *stack) push(sample sample) {
 	var newTop stackItem
 	newTop.time = sample.time
 	if s.isEmpty() {
-		newTop.name = &sample.name
+		s.name = sample.name
 		newTop.len = len(sample.name)
 	} else {
-		newNameBuf := append(*s.top.name, ';')
-		newNameBuf = append(newNameBuf, sample.name...)
-		*s.top.name =  newNameBuf
-		newTop.name = s.top.name
+		s.name = append(s.name, ';')
+		s.name = append(s.name, sample.name...)
 		newTop.len = s.top.len  + 1 + len(sample.name)
 	}
 	newTop.prev = s.top
@@ -191,13 +189,12 @@ func (s *stack) getTime() float64 {
 }
 
 func (s *stack) getName() []byte {
-	return *s.top.name
+	return s.name
 }
 
 func (s *stack) pop() {
 	if s.top.prev != nil {
-		s.top = s.top.prev
+		s.name = s.name[:s.top.prev.len]
 	}
-	newNameBuf := (*s.top.name)[:s.top.len]
-	s.top.name = &(newNameBuf)
+	s.top = s.top.prev
 }
