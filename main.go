@@ -10,6 +10,7 @@ import (
 	"os"
 	"runtime/pprof"
 	"strconv"
+	"unicode/utf8"
 )
 
 type sample struct {
@@ -52,6 +53,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+
 	for k, v := range ct.stackFreq {
 		fmt.Printf("%s %f\n", k, v)
 	}
@@ -59,6 +61,9 @@ func main() {
 
 func collapseTrace(r io.Reader) (collapsedTrace, error) {
 	traceScanner := bufio.NewScanner(r)
+    buf := make([]byte, 0, 64*1024)
+    traceScanner.Buffer(buf, 1024*1024)
+
 	start := true
 
 	for start && traceScanner.Scan() {
@@ -89,6 +94,8 @@ func collapseTrace(r io.Reader) (collapsedTrace, error) {
 			fmt.Fprintln(os.Stderr, "#### ERROR ####")
 			fmt.Fprintln(os.Stderr, errInner.Error())
 			fmt.Fprintln(os.Stderr, string(line))
+            fmt.Fprintf(os.Stderr, "%q\n", line)
+            fmt.Fprintf(os.Stderr, "%s\n", ct.stack.getName())
 			continue
 		}
 		ct.addSample(s)
@@ -120,7 +127,19 @@ func parseSample(input []byte) (sample, error) {
 
 	input = skipField(input)
 
+
 	nameField,_ := readField(input)
+
+    //no Idea why this is needed
+    if nameField[0] == '\xa9' {
+        nameField = nameField[1:]
+    }
+
+    //backup against errors like above
+    if !utf8.Valid(nameField) {
+        return out, fmt.Errorf("invalid utf8")
+    }
+
 	out.name = make([]byte, len(nameField))
 	copy(out.name, nameField)
 	return out, nil
@@ -176,6 +195,7 @@ func (s *stack) push(sample sample) {
 		s.name = sample.name
 		newTop.len = len(sample.name)
 	} else {
+
 		s.name = append(s.name, ';')
 		s.name = append(s.name, sample.name...)
 		newTop.len = s.top.len  + 1 + len(sample.name)
