@@ -5,3 +5,8 @@ stackcollapse-php
 *.collapsed
 *.svg
 *.prof
+
+# Devenv
+.devenv*
+devenv.local.nix
+
